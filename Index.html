@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Defender with Survival Score</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #0a0a23;
+            overflow: hidden;
+        }
+
+        #game-container {
+            width: 800px;
+            height: 600px;
+            background: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgZmlsbD0iIzAwMDEyMCIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjMwMCIgcj0iMjAwIiBmaWxsPSJub25lIiBzdHJva2U9IiMyMjIyNDQiIHN0cm9rZS13aWR0aD0iMiIvPjwvc3ZnPg==');
+            position: relative;
+            border: 2px solid #fff;
+            overflow: hidden;
+        }
+
+        #player {
+            width: 40px;
+            height: 40px;
+            background: #00ff00;
+            position: absolute;
+            bottom: 20px;
+            left: 380px;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            transition: left 0.1s ease-in-out;
+        }
+
+        .moving-left {
+            transform: rotate(-15deg);
+        }
+
+        .moving-right {
+            transform: rotate(15deg);
+        }
+
+        .bullet {
+            width: 5px;
+            height: 15px;
+            background: #ff4444;
+            position: absolute;
+            border-radius: 2px;
+            animation: shoot 0.5s linear;
+        }
+
+        .enemy {
+            width: 30px;
+            height: 30px;
+            background: #ff00ff;
+            position: absolute;
+            clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+            animation: enemy-fall 4s linear;
+        }
+
+        .power-up {
+            width: 20px;
+            height: 20px;
+            background: #ffff00;
+            position: absolute;
+            border-radius: 50%;
+            animation: enemy-fall 6s linear;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background: #ffffff;
+            border: 2px solid #000;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            cursor: pointer;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        .control-btn:active {
+            background: #cccccc;
+        }
+
+        @keyframes shoot {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-600px); }
+        }
+
+        @keyframes enemy-fall {
+            0% { top: -30px; }
+            100% { top: 600px; }
+        }
+
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 20px;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        #health {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 20px;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="score">Score: 0</div>
+        <div id="health">Health: 100</div>
+        <div id="player"></div>
+        <div id="controls">
+            <div id="left-btn" class="control-btn">A</div>
+            <div id="right-btn" class="control-btn">D</div>
+        </div>
+        <div id="game-over">
+            <h2>Game Over!</h2>
+            <p>Final Score: <span id="final-score">0</span></p>
+            <button onclick="restartGame()">Restart</button>
+        </div>
+    </div>
+
+    <script>
+        const gameContainer = document.getElementById('game-container');
+        const player = document.getElementById('player');
+        const scoreDisplay = document.getElementById('score');
+        const healthDisplay = document.getElementById('health');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreDisplay = document.getElementById('final-score');
+        const leftBtn = document.getElementById('left-btn');
+        const rightBtn = document.getElementById('right-btn');
+
+        let score = 0;
+        let health = 100;
+        let playerX = 380;
+        let gameActive = true;
+        let lastShot = 0;
+        let shootCooldown = 200;
+        let enemies = [];
+        let bullets = [];
+        let powerUps = [];
+        let velocity = 0;
+        const maxSpeed = 10;
+        const friction = 0.9;
+
+        // Survival score timer
+        let lastScoreUpdate = Date.now();
+        const scoreInterval = 1000; // 1 second
+
+        // Movement state
+        const controls = { left: false, right: false };
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (!gameActive) return;
+            if (e.key === 'ArrowLeft' || e.key === 'a') controls.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd') controls.right = true;
+            if (e.key === ' ') shoot();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a') controls.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd') controls.right = false;
+        });
+
+        // Button controls - Mouse
+        leftBtn.addEventListener('mousedown', () => { if (gameActive) controls.left = true; });
+        rightBtn.addEventListener('mousedown', () => { if (gameActive) controls.right = true; });
+        leftBtn.addEventListener('mouseup', () => controls.left = false);
+        rightBtn.addEventListener('mouseup', () => controls.right = false);
+
+        // Button controls - Touch
+        leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (gameActive) controls.left = true; });
+        rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (gameActive) controls.right = true; });
+        leftBtn.addEventListener('touchend', () => controls.left = false);
+        rightBtn.addEventListener('touchend', () => controls.right = false);
+
+        function updatePlayer() {
+            if (controls.left && playerX > 0) velocity -= 1;
+            if (controls.right && playerX < 760) velocity += 1;
+
+            velocity *= friction;
+            velocity = Math.max(-maxSpeed, Math.min(maxSpeed, velocity));
+            playerX += velocity;
+
+            playerX = Math.max(0, Math.min(760, playerX));
+            player.style.left = playerX + 'px';
+
+            player.classList.remove('moving-left', 'moving-right');
+            if (velocity < -0.5) player.classList.add('moving-left');
+            if (velocity > 0.5) player.classList.add('moving-right');
+        }
+
+        // Shooting
+        function shoot() {
+            const now = Date.now();
+            if (now - lastShot < shootCooldown) return;
+            lastShot = now;
+
+            const bullet = document.createElement('div');
+            bullet.className = 'bullet';
+            bullet.style.left = (playerX + 17.5) + 'px';
+            bullet.style.bottom = '60px';
+            gameContainer.appendChild(bullet);
+            bullets.push(bullet);
+
+            bullet.addEventListener('animationend', () => bullet.remove());
+        }
+
+        // Create enemy
+        function createEnemy() {
+            if (!gameActive) return;
+            const enemy = document.createElement('div');
+            enemy.className = 'enemy';
+            const xPos = Math.random() * (800 - 30);
+            enemy.style.left = xPos + 'px';
+            gameContainer.appendChild(enemy);
+            enemies.push(enemy);
+
+            enemy.addEventListener('animationend', () => {
+                if (enemy.parentElement) enemy.remove();
+            });
+        }
+
+        // Create power-up
+        function createPowerUp() {
+            if (!gameActive) return;
+            const powerUp = document.createElement('div');
+            powerUp.className = 'power-up';
+            const xPos = Math.random() * (800 - 20);
+            powerUp.style.left = xPos + 'px';
+            gameContainer.appendChild(powerUp);
+            powerUps.push(powerUp);
+
+            powerUp.addEventListener('animationend', () => powerUp.remove());
+        }
+
+        // Collision detection
+        function checkCollisions() {
+            // Bullet-Enemy collision
+            bullets.forEach((bullet, bIndex) => {
+                enemies.forEach((enemy, eIndex) => {
+                    const bRect = bullet.getBoundingClientRect();
+                    const eRect = enemy.getBoundingClientRect();
+                    if (
+                        bRect.bottom >= eRect.top &&
+                        bRect.top <= eRect.bottom &&
+                        bRect.right >= eRect.left &&
+                        bRect.left <= eRect.right
+                    ) {
+                        bullet.remove();
+                        enemy.remove();
+                        bullets.splice(bIndex, 1);
+                        enemies.splice(eIndex, 1);
+                        score += 20;
+                        scoreDisplay.textContent = `Score: ${score}`;
+                    }
+                });
+            });
+
+            // Player-Enemy collision
+            const pRect = player.getBoundingClientRect();
+            enemies.forEach((enemy, eIndex) => {
+                const eRect = enemy.getBoundingClientRect();
+                if (
+                    pRect.bottom >= eRect.top &&
+                    pRect.top <= eRect.bottom &&
+                    pRect.right >= eRect.left &&
+                    pRect.left <= eRect.right
+                ) {
+                    enemy.remove();
+                    enemies.splice(eIndex, 1);
+                    health -= 20;
+                    healthDisplay.textContent = `Health: ${health}`;
+                    if (health <= 0) endGame();
+                }
+            });
+
+            // Player-PowerUp collision
+            powerUps.forEach((powerUp, pIndex) => {
+                const puRect = powerUp.getBoundingClientRect();
+                if (
+                    pRect.bottom >= puRect.top &&
+                    pRect.top <= puRect.bottom &&
+                    pRect.right >= puRect.left &&
+                    pRect.left <= puRect.right
+                ) {
+                    powerUp.remove();
+                    powerUps.splice(pIndex, 1);
+                    health = Math.min(100, health + 20);
+                    healthDisplay.textContent = `Health: ${health}`;
+                }
+            });
+        }
+
+        // Update survival score
+        function updateSurvivalScore() {
+            const now = Date.now();
+            if (gameActive && now - lastScoreUpdate >= scoreInterval) {
+                score += 1; // Add 1 point per second
+                scoreDisplay.textContent = `Score: ${score}`;
+                lastScoreUpdate = now;
+            }
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (!gameActive) return;
+            updatePlayer();
+            checkCollisions();
+            updateSurvivalScore();
+
+            if (Math.random() < 0.03) createEnemy();
+            if (Math.random() < 0.01) createPowerUp();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // End game
+        function endGame() {
+            gameActive = false;
+            finalScoreDisplay.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+
+        // Restart game
+        window.restartGame = function() {
+            score = 0;
+            health = 100;
+            gameActive = true;
+            playerX = 380;
+            velocity = 0;
+            lastScoreUpdate = Date.now();
+            scoreDisplay.textContent = `Score: ${score}`;
+            healthDisplay.textContent = `Health: ${health}`;
+            gameOverScreen.style.display = 'none';
+            player.style.left = playerX + 'px';
+            player.classList.remove('moving-left', 'moving-right');
+            document.querySelectorAll('.bullet, .enemy, .power-up').forEach(el => el.remove());
+            bullets = [];
+            enemies = [];
+            powerUps = [];
+            gameLoop();
+        }
+
+        // Start game
+        gameLoop();
+    </script>
+</body>
+</html>
